@@ -1,0 +1,648 @@
+AdminController.java
+
+package com.cybage;
+
+import java.io.IOException;
+import java.io.PrintWriter;
+
+import javax.servlet.ServletException;
+import javax.servlet.annotation.HttpConstraint;
+import javax.servlet.annotation.ServletSecurity;
+import javax.servlet.http.HttpServlet;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+
+import com.cybage.dao.AdminDao;
+import com.cybage.model.Users;
+
+@ServletSecurity(
+		value = @HttpConstraint(
+				rolesAllowed = {"admin"}
+				)  
+		)
+public class AdminController extends HttpServlet {
+	 
+	AdminDao ad = new AdminDao();
+	protected void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+		 doPost(request, response);
+	} 
+ 
+	protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+		PrintWriter out = response.getWriter();
+		out.print("admin servlet");
+		String path =  request.getPathInfo(); 
+		if(path.equals("/list")) {
+			try {
+				request.setAttribute("users", ad.findAllUsers());
+				request.getRequestDispatcher("/admin/admin-user.jsp").forward(request, response);
+			} catch (Exception e) {				 
+				e.printStackTrace();
+			}
+		} 
+		if(path.equals("/add")) {
+			try {
+				Users user = new Users(request.getParameter("username"), request.getParameter("password"), "member");				
+				ad.addUser(user);
+				response.sendRedirect("list");
+			} catch (Exception e) {
+				 
+				e.printStackTrace();
+			}
+		}
+		if(path.equals("/delete")) {
+			try {								
+				ad.deleteUser(request.getParameter("username"));
+				response.sendRedirect("list");
+			} catch (Exception e) {
+				 
+				e.printStackTrace();
+			}
+		}
+		if(path.equals("/update")) {
+			try {								
+				request.setAttribute("user", ad.findUser(request.getParameter("username")));
+				request.getRequestDispatcher("/admin/update-user.jsp").forward(request, response);
+			} catch (Exception e) {
+				 
+				e.printStackTrace();
+			}
+		}
+		if(path.equals("/updateuser")) {
+			try {								
+				Users user = new Users(request.getParameter("username"), request.getParameter("password"), request.getParameter("userrole"));
+				ad.updateUser(user);
+				response.sendRedirect("list");
+			} catch (Exception e) {
+				 
+				e.printStackTrace();
+			}
+		}
+	}
+
+}
+
+----------
+AppController.java
+package com.cybage;
+
+import java.io.IOException;
+import java.io.PrintWriter;
+
+import javax.servlet.ServletException;
+import javax.servlet.annotation.HttpConstraint;
+import javax.servlet.annotation.ServletSecurity;
+import javax.servlet.http.HttpServlet;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+
+@ServletSecurity(
+		value = @HttpConstraint(
+				rolesAllowed = {"admin", "member", "manager"}
+				)  
+		)
+public class AppController extends HttpServlet {
+    public AppController() {
+        super();
+        // TODO Auto-generated constructor stub
+    }
+
+	protected void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+		PrintWriter out = response.getWriter();
+		out.print("app servlet");
+		String path =  request.getPathInfo(); 
+		if(request.isUserInRole("admin")) {
+			request.getRequestDispatcher("/admin/admin-home.jsp").forward(request, response);
+		}
+		if(request.isUserInRole("manager")) {
+			request.getRequestDispatcher("/manager/manager-home.jsp").forward(request, response);
+		}
+		if(request.isUserInRole("member")) {
+			request.getRequestDispatcher("/member/member-home.jsp").forward(request, response);
+		}
+		
+	}
+
+
+	protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+		doGet(request, response);
+	}
+
+}
+---------
+AdminDao.java
+package com.cybage.dao;
+
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.util.ArrayList;
+import java.util.List;
+
+import com.cybage.model.Users;
+
+ 
+
+public class AdminDao {
+	
+	public List<Users> findAllUsers() throws Exception{
+		String sql = "select * from users";
+		Connection con = DbUtil.getConnection();
+		PreparedStatement ps = con.prepareStatement(sql);
+		ResultSet rs = ps.executeQuery();
+		
+		List<Users> users = new ArrayList();
+		while(rs.next()) {
+			users.add(new Users(rs.getString(1), rs.getString(2), rs.getString(3)));
+		}
+		return users;
+	}
+	
+	public Users findUser(String username) throws Exception{
+		String sql = "select * from users where username = ?";
+		Connection con = DbUtil.getConnection();
+		PreparedStatement ps = con.prepareStatement(sql);
+		ps.setString(1, username);
+		ResultSet rs = ps.executeQuery();
+			
+		if(rs.next()) {
+			return new Users(rs.getString(1), rs.getString(2), rs.getString(3));
+		}
+		return null;
+	}
+
+	public int addUser(Users user) throws Exception{
+		String sql = "insert into users values(?, ?, ?)";
+		Connection con = DbUtil.getConnection();
+		PreparedStatement ps = con.prepareStatement(sql);
+		ps.setString(1, user.getUsername());
+		ps.setString(2, user.getPassword());
+		ps.setString(3, user.getRole());
+ 
+		return ps.executeUpdate();
+	}
+
+	public int deleteUser(String username) throws Exception {
+		String sql = "delete from users where username = ? ";
+		Connection con = DbUtil.getConnection();
+		PreparedStatement ps = con.prepareStatement(sql);
+		ps.setString(1, username);
+		return ps.executeUpdate();
+	}
+
+	public int updateUser(Users user) throws Exception {
+		String sql = "update users set password = ?, userrole = ? where username = ?  ";
+		Connection con = DbUtil.getConnection();
+		PreparedStatement ps = con.prepareStatement(sql);
+		ps.setString(1, user.getPassword());
+		ps.setString(2, user.getRole());
+		ps.setString(3, user.getUsername());
+		return ps.executeUpdate();
+	}
+}
+-------------
+Dbutil
+package com.cybage.dao;
+
+import java.io.FileReader;
+import java.io.InputStream;
+import java.net.URL;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.Statement;
+import java.util.Properties;
+
+import org.apache.commons.dbcp2.BasicDataSource;
+
+
+public class DbUtil {
+
+	public static String dbURL;
+	public static String dbUser ;
+	public static String dbPassword ;
+	static {
+		try {
+			ClassLoader classloader = Thread.currentThread().getContextClassLoader();			
+			InputStream is = classloader.getResourceAsStream("app.properties");
+
+			Properties props = new Properties();
+			props.load(is);
+			dbURL = props.getProperty("dbURL");
+			dbUser = props.getProperty("dbUser");
+			dbPassword = props.getProperty("dbPassword");
+			
+		} catch (Exception e) {
+			e.printStackTrace();
+		}		
+	}
+
+	//with connection pool
+	public static Connection getConnection() throws Exception{
+		Connection con = getDataSource().getConnection();
+		return con;
+	}
+
+	private static BasicDataSource getDataSource()
+	{        
+		BasicDataSource ds = new BasicDataSource();
+		ds.setUrl(dbURL);
+		ds.setUsername(dbUser);
+		ds.setPassword(dbPassword);
+		ds.setMinIdle(5);
+		ds.setMaxIdle(10);
+		ds.setMaxOpenPreparedStatements(100); 
+		return ds;
+	}
+
+
+	public static Statement getStatement() throws Exception {
+		return getConnection().createStatement();
+	}
+	public static PreparedStatement getPreparedStatement(String sql) throws Exception{
+		return getConnection().prepareStatement(sql);
+	}
+}
+-----------------
+users.java
+package com.cybage.model;
+
+public class Users {
+	private String username;
+	private String password;
+	private String role;
+	public Users() {
+		super();
+		// TODO Auto-generated constructor stub
+	}
+	public Users(String username, String password, String role) {
+		super();
+		this.username = username;
+		this.password = password;
+		this.role = role;
+	}
+	public String getUsername() {
+		return username;
+	}
+	public void setUsername(String username) {
+		this.username = username;
+	}
+	public String getPassword() {
+		return password;
+	}
+	public void setPassword(String password) {
+		this.password = password;
+	}
+	public String getRole() {
+		return role;
+	}
+	public void setRole(String role) {
+		this.role = role;
+	}
+	@Override
+	public String toString() {
+		return "Users [username=" + username + ", role=" + role + "]";
+	}
+
+}
+----------------
+app.properties
+dbURL=jdbc:mysql://localhost:3306/cybage
+dbUser=root
+dbPassword=admin123
+----------------
+error.jsp
+<%@ page language="java" contentType="text/html; charset=ISO-8859-1"
+	pageEncoding="ISO-8859-1"%>
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+<title>Insert title here</title>
+</head>
+<body>
+	<h2 style="color:red">Invalid user name / password</h2>
+	<jsp:include page="login.jsp"></jsp:include>
+</body>
+</html>
+-----------
+index.jsp
+<html>
+<body>
+<h2>Hello World!</h2>
+
+<a href="<%=request.getContextPath()%>/AppController">Login</a>
+</body>
+</html>
+---------
+login.jsp
+<%@ page language="java" contentType="text/html; charset=ISO-8859-1"
+	pageEncoding="ISO-8859-1"%>
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="ISO-8859-1">
+<title>Insert title here</title>
+</head>
+<body>
+	<form method="POST" action="j_security_check">
+		<table border="0">
+			<tr>
+				<td>Login</td>
+				<td><input type="text" name="j_username"></td>
+			</tr>
+			<tr>
+				<td>Password</td>
+				<td><input type="password" name="j_password"></td>
+			</tr>
+		</table>
+
+		<input type="submit" value="Login!">
+	</form>
+	 
+</body>
+</html>
+-------------------
+logout.jsp
+<%@ page language="java" contentType="text/html; charset=ISO-8859-1"
+	pageEncoding="ISO-8859-1"%>
+<%@ page session="true"%>
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="ISO-8859-1">
+<title>Insert title here</title>
+</head>
+<body>
+	<h2 style="color:green">
+		User '<%=request.getRemoteUser()%>' has been logged out.
+	</h2>
+	<%
+		session.invalidate();
+	%>
+	<jsp:include page="index.jsp"></jsp:include>
+	<br />
+	<br />
+</body>
+</html>
+--------------------
+manager-home.jsp
+<%@ page language="java" contentType="text/html; charset=ISO-8859-1"
+    pageEncoding="ISO-8859-1"%>
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="ISO-8859-1">
+<title>Insert title here</title>
+</head>
+<body>
+manager home
+
+<hr>
+	<a href="<%=request.getContextPath()%>/logout.jsp">logout</a>
+</body>
+</html>
+--------------
+member-home.jsp
+<%@ page language="java" contentType="text/html; charset=ISO-8859-1"
+    pageEncoding="ISO-8859-1"%>
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="ISO-8859-1">
+<title>Insert title here</title>
+</head>
+<body>
+member home
+<hr>
+	<a href="<%=request.getContextPath()%>/logout.jsp">logout</a>
+</body>
+</html>
+---------------
+admin-home.jsp
+<%@ page language="java" contentType="text/html; charset=ISO-8859-1"
+	pageEncoding="ISO-8859-1"%>
+<%@ taglib uri="http://java.sun.com/jsp/jstl/core" prefix="c"%>
+<%@ page isELIgnored="false"%>
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="ISO-8859-1">
+<title>Insert title here</title>
+</head>
+<body>
+	<a href="<%=request.getContextPath()%>/AdminController/list">users</a>
+	<hr>
+	
+	<a href="<%=request.getContextPath()%>/logout.jsp">logout</a>
+</body>
+</html>
+----------------
+add-user.jsp
+<%@ page language="java" contentType="text/html; charset=ISO-8859-1"
+    pageEncoding="ISO-8859-1"%>
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="ISO-8859-1">
+<title>Insert title here</title>
+</head>
+<body>
+	<form action="<%=request.getContextPath()%>/AdminController/add">
+		<input type="text" name="username">
+		<input type="password" name="password">
+		<input type="submit" value="register">
+	</form>
+	<hr>
+	<a href="<%=request.getContextPath()%>/logout.jsp">logout</a>
+</body>
+</html>
+--------------------
+admin-user.jsp
+<%@ page language="java" contentType="text/html; charset=ISO-8859-1"
+	pageEncoding="ISO-8859-1"%>
+<%@ taglib uri="http://java.sun.com/jsp/jstl/core" prefix="c"%>
+<%@ page isELIgnored="false"%>
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="ISO-8859-1">
+<title>Insert title here</title>
+</head>
+<body>
+	<a href="<%=request.getContextPath()%>/admin/add-user.jsp">Add user</a>
+	<table border="1">
+		<tr>
+			<th>Username</th>
+			<th>User role</th>
+		</tr>
+		<c:forEach var="user" items="${users }">
+			<tr>
+				<td><c:out value="${user.username }"></c:out></td>
+				<td><c:out value="${user.role }"></c:out></td>
+				<td><a href="<%=request.getContextPath()%>/AdminController/delete?username=${user.username}">Delete</a></td>
+				<td><a href="<%=request.getContextPath()%>/AdminController/update?username=${user.username}">Update</a></td>
+		</c:forEach>
+	</table>
+	<a href="<%=request.getContextPath()%>/logout.jsp">logout</a>
+</body>
+</html>
+----------------
+update-user.jsp
+<%@ page language="java" contentType="text/html; charset=ISO-8859-1"
+    pageEncoding="ISO-8859-1"%>
+    <%@ taglib uri="http://java.sun.com/jsp/jstl/core" prefix="c"%>
+<%@ page isELIgnored="false"%>
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="ISO-8859-1">
+<title>Insert title here</title>
+</head>
+<body>
+	<form action="<%=request.getContextPath()%>/AdminController/updateuser" method="post">
+		<input type="text" name="username" value="${user.username }">
+		<input type="password" name="password" value="">
+		<input type="type" name="userrole" value="${user.role }">
+		<input type="submit" value="register">
+	</form>
+	
+	
+	<hr>
+	<a href="<%=request.getContextPath()%>/logout.jsp">logout</a>
+</body>
+</html>
+-----------------
+web.xml
+<!DOCTYPE web-app PUBLIC
+ "-//Sun Microsystems, Inc.//DTD Web Application 2.3//EN"
+ "http://java.sun.com/dtd/web-app_2_3.dtd" >
+
+<web-app>
+	<servlet>
+		<servlet-name>AdminController</servlet-name>
+		<display-name>AdminController</display-name>
+		<description></description>
+		<servlet-class>com.cybage.AdminController</servlet-class>
+	</servlet>
+	<servlet>
+		<servlet-name>AppController</servlet-name>
+		<display-name>AppController</display-name>
+		<description></description>
+		<servlet-class>com.cybage.AppController</servlet-class>
+	</servlet>
+	<servlet-mapping>
+		<servlet-name>AdminController</servlet-name>
+		<url-pattern>/AdminController/*</url-pattern>
+	</servlet-mapping>
+	<servlet-mapping>
+		<servlet-name>AppController</servlet-name>
+		<url-pattern>/AppController/*</url-pattern>
+	</servlet-mapping>
+  <security-constraint>
+		<web-resource-collection>
+			<web-resource-name>SecuredBookSite</web-resource-name>
+			<url-pattern>/admin/*</url-pattern>
+		</web-resource-collection>
+		<auth-constraint>
+			<description>Let only admin use this app</description>
+			<role-name>admin</role-name>
+		</auth-constraint>
+	</security-constraint>
+	<security-constraint>
+		<web-resource-collection>
+			<web-resource-name>SecuredBookSite</web-resource-name>
+			<url-pattern>/member/*</url-pattern>
+		</web-resource-collection>
+		<auth-constraint>
+			<description>Let only member use this app</description>
+			<role-name>member</role-name>
+		</auth-constraint>
+	</security-constraint>
+
+	<security-constraint>
+		<web-resource-collection>
+			<web-resource-name>SecuredBookSite</web-resource-name>
+			<url-pattern>/manager/*</url-pattern>
+		</web-resource-collection>
+		<auth-constraint>
+			<description>Let only managers use this app</description>
+			<role-name>manager</role-name>
+		</auth-constraint>
+	</security-constraint>
+
+
+	<login-config>
+		<auth-method>FORM</auth-method>
+		<form-login-config>
+			<form-login-page>/login.jsp</form-login-page>
+			<form-error-page>/error.jsp</form-error-page>
+		</form-login-config>
+	</login-config>
+</web-app>
+
+---------------
+pom.xml
+
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.cybage</groupId>
+  <artifactId>webapp</artifactId>
+  <packaging>war</packaging>
+  <version>0.0.1-SNAPSHOT</version>
+  <name>webapp Maven Webapp</name>
+  <url>http://maven.apache.org</url>
+  <dependencies>
+    <dependency>
+      <groupId>junit</groupId>
+      <artifactId>junit</artifactId>
+      <version>3.8.1</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+			<groupId>javax.servlet</groupId>
+			<artifactId>javax.servlet-api</artifactId>
+			<version>4.0.1</version>
+			<scope>provided</scope>
+		</dependency>
+		<!-- https://mvnrepository.com/artifact/javax.servlet.jsp.jstl/jstl -->
+		<dependency>
+			<groupId>javax.servlet</groupId>
+			<artifactId>jstl</artifactId>
+			<version>1.2</version>
+		</dependency>
+		<!-- https://mvnrepository.com/artifact/javax.servlet.jsp/javax.servlet.jsp-api -->
+		<dependency>
+			<groupId>javax.servlet.jsp</groupId>
+			<artifactId>javax.servlet.jsp-api</artifactId>
+			<version>2.3.3</version>
+			<scope>provided</scope>
+		</dependency>
+		<!-- https://mvnrepository.com/artifact/mysql/mysql-connector-java -->
+		<dependency>
+			<groupId>mysql</groupId>
+			<artifactId>mysql-connector-java</artifactId>
+			<version>8.0.22</version>
+		</dependency>
+		<!-- https://mvnrepository.com/artifact/org.apache.commons/commons-dbcp2 -->
+		<dependency>
+			<groupId>org.apache.commons</groupId>
+			<artifactId>commons-dbcp2</artifactId>
+			<version>2.8.0</version>
+		</dependency>
+		<!-- https://mvnrepository.com/artifact/org.apache.commons/commons-pool2 -->
+		<dependency>
+			<groupId>org.apache.commons</groupId>
+			<artifactId>commons-pool2</artifactId>
+			<version>2.8.0</version>
+		</dependency>
+		<!-- https://mvnrepository.com/artifact/commons-logging/commons-logging -->
+		<dependency>
+			<groupId>commons-logging</groupId>
+			<artifactId>commons-logging</artifactId>
+			<version>1.2</version>
+		</dependency>
+  </dependencies>
+  <build>
+    <finalName>webapp</finalName>
+  </build>
+</project>
